@@ -1,0 +1,322 @@
+import os
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
+from pymongo import MongoClient
+from datetime import datetime
+import pandas as pd
+from bson.objectid import ObjectId
+from functools import wraps
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
+
+# MongoDB connection
+# IMPORTANT: Replace the string below with your MongoDB Atlas connection string
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv6147@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
+client = MongoClient(MONGO_URI)
+db = client['member_management_db']
+users_collection = db['users']
+members_collection = db['members']
+
+# Initialize admin user if none exists
+if users_collection.count_documents({}) == 0:
+    users_collection.insert_one({
+        "name": "admin",
+        "username": "admin",
+        "password": generate_password_hash("admin"),
+        "role": "admin"
+    })
+else:
+    # Ensure existing admin has role 'admin'
+    users_collection.update_one({"username": "admin"}, {"$set": {"role": "admin"}})
+
+# Auth Guard Decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Admin Guard Decorator
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session or session.get('role') != 'admin':
+            flash("You do not have permission to access this page.", "danger")
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/')
+def index():
+    return redirect(url_for('dashboard'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        user = users_collection.find_one({"username": username})
+        if user and check_password_hash(user['password'], password):
+            session['username'] = user['username']
+            session['name'] = user['name']
+            session['role'] = user.get('role', 'user')
+            
+            if session['role'] == 'admin':
+                return redirect(url_for('admin_portal'))
+            return redirect(url_for('dashboard'))
+        else:
+            flash("Invalid username or password", "danger")
+            
+    return render_template('login.html')
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if users_collection.find_one({"username": username}):
+            flash("Username already exists. Please choose another.", "warning")
+        elif name and username and password:
+            users_collection.insert_one({
+                "name": name,
+                "username": username,
+                "password": generate_password_hash(password),
+                "role": "user"
+            })
+            flash("Account created successfully! You can now log in.", "success")
+            return redirect(url_for('login'))
+        else:
+            flash("All fields are required.", "danger")
+            
+    return render_template('signup.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    username = session.get('username')
+    
+    user_filter = {"created_by": username}
+    
+    total_members = members_collection.count_documents(user_filter)
+    today_entries = members_collection.count_documents({"date": today_str, "created_by": username})
+    boy_entries = members_collection.count_documents({"grain_type": "દીકરા ના", "created_by": username})
+    girl_entries = members_collection.count_documents({"grain_type": "દીકરી ના", "created_by": username})
+    
+    members = list(members_collection.find(user_filter).sort([("_id", -1)]))
+    
+    default_hastaks = ["અશોકભાઈ ગોવિંદભાઈ બેલડિયા", "સુરેશભાઈ ભુરાભાઈ ઝડફિયા ", "મહેશભાઈ મનજીભાઈ ડોંડા", "લલ્લુભાઈ નારણભાઈ મોરડિયા "]
+    db_hastaks = members_collection.distinct("hastak")
+    
+    # Combine default options with any custom ones from the database (removing duplicates)
+    hastak_options = list(set(default_hastaks + db_hastaks))
+        
+    return render_template('dashboard.html', 
+                           total_members=total_members,
+                           today_entries=today_entries,
+                           boy_entries=boy_entries,
+                           girl_entries=girl_entries,
+                           members=members,
+                           hastak_options=hastak_options)
+
+@app.route('/add_member', methods=['POST'])
+@login_required
+def add_member():
+    member_name = request.form.get('member_name')
+    mobile_number = request.form.get('mobile_number')
+    if mobile_number and not mobile_number.startswith('+91'):
+        mobile_number = f"+91 {mobile_number}"
+    age = int(request.form.get('age', 0))
+    date_str = request.form.get('date')
+    grain_type = request.form.get('grain_type')
+    hastak = request.form.get('hastak')
+    
+    if member_name and date_str and grain_type and hastak:
+        try:
+            members_collection.insert_one({
+                "member_name": member_name,
+                "mobile_number": mobile_number,
+                "age": age,
+                "date": date_str,
+                "grain_type": grain_type,
+                "hastak": hastak,
+                "created_by": session.get('username')
+            })
+            flash("Member added successfully", "success")
+        except Exception as e:
+            flash(f"Error saving to database: {str(e)}", "danger")
+    else:
+        flash("All fields are required", "danger")
+        
+    return redirect(url_for('dashboard'))
+
+@app.route('/edit_member/<member_id>', methods=['POST'])
+@login_required
+def edit_member(member_id):
+    query = {"_id": ObjectId(member_id)}
+    if session.get('role') != 'admin':
+        query["created_by"] = session.get('username')
+        
+    member = members_collection.find_one(query)
+    if not member:
+        flash("You don't have permission to edit this member or it doesn't exist.", "danger")
+        return redirect(request.referrer or url_for('dashboard'))
+        
+    member_name = request.form.get('member_name')
+    mobile_number = request.form.get('mobile_number')
+    # Clean mobile number if they submitted with +91 already or didn't
+    if mobile_number:
+        mobile_number = mobile_number.replace("+91", "").strip()
+        mobile_number = f"+91 {mobile_number}"
+        
+    age = int(request.form.get('age', 0))
+    date_str = request.form.get('date')
+    grain_type = request.form.get('grain_type')
+    hastak = request.form.get('hastak')
+    
+    if member_name and date_str and grain_type and hastak:
+        update_data = {
+            "member_name": member_name,
+            "mobile_number": mobile_number,
+            "age": age,
+            "date": date_str,
+            "grain_type": grain_type,
+            "hastak": hastak
+        }
+        members_collection.update_one(query, {"$set": update_data})
+        flash("Member updated successfully!", "success")
+    else:
+        flash("All fields are required.", "danger")
+        
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/delete_member/<member_id>', methods=['POST'])
+@login_required
+def delete_member(member_id):
+    query = {"_id": ObjectId(member_id)}
+    if session.get('role') != 'admin':
+        query["created_by"] = session.get('username')
+        
+    result = members_collection.delete_one(query)
+    
+    if result.deleted_count > 0:
+        flash("Member deleted successfully", "success")
+    else:
+        flash("You don't have permission to delete this member.", "danger")
+        
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/admin')
+@login_required
+@admin_required
+def admin_portal():
+    total_members = members_collection.count_documents({})
+    total_users = users_collection.count_documents({})
+    
+    pipeline = [
+        {"$group": {"_id": "$created_by", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    user_stats_raw = list(members_collection.aggregate(pipeline))
+    user_stats = []
+    for stat in user_stats_raw:
+        username = stat['_id']
+        if username:
+            user = users_collection.find_one({"username": username})
+            name = user['name'] if user else username
+            user_stats.append({"username": username, "name": name, "count": stat['count']})
+        
+    members_raw = list(members_collection.find().sort([("_id", -1)]))
+    members = []
+    
+    default_hastaks = ["અશોકભાઈ ગોવિંદભાઈ બેલડિયા", "સુરેશભાઈ ભુરાભાઈ εzફિયા ", "મહેશભાઈ મનજીભાઈ ડોંડા", "લલ્લુભાઈ નારણભાઈ મોરડિયા "]
+    db_hastaks = members_collection.distinct("hastak")
+    hastak_options = list(set(default_hastaks + db_hastaks))
+    
+    username_to_name = {stat['username']: stat['name'] for stat in user_stats}
+    
+    for member in members_raw:
+        creator_username = member.get('created_by')
+        if creator_username:
+            if creator_username not in username_to_name:
+                user = users_collection.find_one({"username": creator_username})
+                username_to_name[creator_username] = user['name'] if user else creator_username
+            member['creator_name'] = username_to_name[creator_username]
+        else:
+            member['creator_name'] = 'System'
+        members.append(member)
+    
+    return render_template('admin.html', 
+                           total_members=total_members,
+                           total_users=total_users,
+                           user_stats=user_stats,
+                           members=members,
+                           hastak_options=hastak_options)
+
+@app.route('/reports')
+@login_required
+def reports():
+    return render_template('reports.html')
+
+@app.route('/export/excel')
+@login_required
+def export_excel():
+    members = list(members_collection.find({}, {"_id": 0}))
+    if not members:
+        flash("No data to export", "warning")
+        return redirect(url_for('reports'))
+        
+    df = pd.DataFrame(members)
+    df.rename(columns={
+        "member_name": "નામ (Name)",
+        "mobile_number": "મોબાઈલ (Mobile)",
+        "age": "ઉંમર (Age)",
+        "date": "તારીખ (Date)",
+        "grain_type": "દાણા (Grain)",
+        "hastak": "હસ્તક (Hastak)",
+        "created_by": "Created By"
+    }, inplace=True)
+    
+    file_path = "static/exports/members.xlsx"
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    df.to_excel(file_path, index=False)
+    
+    return send_file(file_path, as_attachment=True)
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    if request.method == 'POST':
+        new_name = request.form.get('name')
+        new_password = request.form.get('password')
+        
+        update_data = {}
+        if new_name and new_name.strip():
+            update_data['name'] = new_name.strip()
+            session['name'] = new_name.strip()
+            
+        if new_password and new_password.strip():
+            update_data['password'] = generate_password_hash(new_password)
+            
+        if update_data:
+            users_collection.update_one({"username": session['username']}, {"$set": update_data})
+            flash("Profile updated successfully!", "success")
+            
+        return redirect(url_for('profile'))
+        
+    user = users_collection.find_one({"username": session['username']})
+    return render_template('profile.html', user=user)
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
