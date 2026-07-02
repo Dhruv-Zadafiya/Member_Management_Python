@@ -320,31 +320,33 @@ def export_pdf():
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Try to load Gujarati font, fallback to Helvetica if not available
-    font_path = os.path.join(os.path.dirname(__file__), 'static', 'fonts', 'NotoSansGujarati-Regular.ttf')
-    has_gujarati_font = False
-    if os.path.exists(font_path):
-        try:
-            pdf.add_font('NotoGujarati', '', font_path)
-            has_gujarati_font = True
-        except Exception:
-            has_gujarati_font = False
+    # Load fonts - NotoSans for English/numbers, NotoSansGujarati for Gujarati text
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    latin_font_path = os.path.join(base_dir, 'static', 'fonts', 'NotoSans-Regular.ttf')
+    gujarati_font_path = os.path.join(base_dir, 'static', 'fonts', 'NotoSansGujarati-Regular.ttf')
+    
+    if not os.path.exists(latin_font_path) or not os.path.exists(gujarati_font_path):
+        flash("PDF font files not found. Please run the build script first.", "danger")
+        return redirect(url_for('reports'))
+    
+    try:
+        pdf.add_font('NotoSans', '', latin_font_path)
+        pdf.add_font('NotoGujarati', '', gujarati_font_path)
+        # Set Gujarati as fallback - fpdf2 auto-switches when it finds Gujarati characters
+        pdf.set_fallback_fonts(['NotoGujarati'])
+    except Exception as e:
+        flash(f"Error loading PDF fonts: {str(e)}", "danger")
+        return redirect(url_for('reports'))
     
     pdf.add_page()
     
     # Title
-    if has_gujarati_font:
-        pdf.set_font('NotoGujarati', '', 18)
-    else:
-        pdf.set_font('Helvetica', 'B', 18)
+    pdf.set_font('NotoSans', '', 18)
     pdf.set_text_color(41, 98, 255)
     pdf.cell(0, 12, 'Member Management - Report', ln=True, align='C')
     
     # Subtitle with date
-    if has_gujarati_font:
-        pdf.set_font('NotoGujarati', '', 10)
-    else:
-        pdf.set_font('Helvetica', '', 10)
+    pdf.set_font('NotoSans', '', 10)
     pdf.set_text_color(120, 120, 120)
     pdf.cell(0, 8, f'Generated on: {datetime.now().strftime("%d-%m-%Y %H:%M")} | Total Records: {len(members)}', ln=True, align='C')
     pdf.ln(5)
@@ -354,10 +356,7 @@ def export_pdf():
     col_widths = [55, 35, 15, 28, 35, 55, 54]
     
     # Header row
-    if has_gujarati_font:
-        pdf.set_font('NotoGujarati', '', 10)
-    else:
-        pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_font('NotoSans', '', 10)
     pdf.set_fill_color(41, 98, 255)
     pdf.set_text_color(255, 255, 255)
     for i, header in enumerate(headers):
@@ -365,10 +364,7 @@ def export_pdf():
     pdf.ln()
     
     # Data rows
-    if has_gujarati_font:
-        pdf.set_font('NotoGujarati', '', 9)
-    else:
-        pdf.set_font('Helvetica', '', 9)
+    pdf.set_font('NotoSans', '', 9)
     pdf.set_text_color(50, 50, 50)
     
     for idx, member in enumerate(members):
@@ -394,10 +390,7 @@ def export_pdf():
     
     # Footer
     pdf.ln(5)
-    if has_gujarati_font:
-        pdf.set_font('NotoGujarati', '', 8)
-    else:
-        pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_font('NotoSans', '', 8)
     pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 8, 'Member Management System - Confidential Report', ln=True, align='C')
     
