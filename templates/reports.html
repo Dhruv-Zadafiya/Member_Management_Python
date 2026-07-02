@@ -15,10 +15,9 @@
                         <i class="bi bi-file-earmark-excel me-2"></i>Export to Excel
                     </a>
                     
-                    <!-- PDF Export will be implemented soon -->
-                    <button class="btn btn-danger fw-bold px-4 shadow-sm" onclick="window.print()">
-                        <i class="bi bi-file-earmark-pdf me-2"></i>Print / Save as PDF
-                    </button>
+                    <a href="{{ url_for('export_pdf') }}" class="btn btn-danger fw-bold px-4 shadow-sm">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>Export to PDF
+                    </a>
                 </div>
             </div>
         </div>

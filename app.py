@@ -1,4 +1,6 @@
 import os
+import io
+import certifi
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymongo import MongoClient
@@ -6,14 +8,20 @@ from datetime import datetime
 import pandas as pd
 from bson.objectid import ObjectId
 from functools import wraps
+from fpdf import FPDF
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
 
-# MongoDB connection
-# IMPORTANT: Replace the string below with your MongoDB Atlas connection string
+# MongoDB connection with SSL certificate verification for Render deployment
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv6147@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
-client = MongoClient(MONGO_URI)
+client = MongoClient(
+    MONGO_URI,
+    tlsCAFile=certifi.where(),
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=10000
+)
 db = client['member_management_db']
 users_collection = db['users']
 members_collection = db['members']
@@ -119,7 +127,6 @@ def dashboard():
     default_hastaks = ["અશોકભાઈ ગોવિંદભાઈ બેલડિયા", "સુરેશભાઈ ભુરાભાઈ ઝડફિયા ", "મહેશભાઈ મનજીભાઈ ડોંડા", "લલ્લુભાઈ નારણભાઈ મોરડિયા "]
     db_hastaks = members_collection.distinct("hastak")
     
-    # Combine default options with any custom ones from the database (removing duplicates)
     hastak_options = list(set(default_hastaks + db_hastaks))
         
     return render_template('dashboard.html', 
@@ -128,7 +135,8 @@ def dashboard():
                            boy_entries=boy_entries,
                            girl_entries=girl_entries,
                            members=members,
-                           hastak_options=hastak_options)
+                           hastak_options=hastak_options,
+                           datetime=datetime)
 
 @app.route('/add_member', methods=['POST'])
 @login_required
@@ -288,11 +296,122 @@ def export_excel():
         "created_by": "Created By"
     }, inplace=True)
     
-    file_path = "static/exports/members.xlsx"
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    df.to_excel(file_path, index=False)
+    # Use in-memory buffer instead of filesystem (Render has ephemeral filesystem)
+    output = io.BytesIO()
+    df.to_excel(output, index=False, engine='openpyxl')
+    output.seek(0)
     
-    return send_file(file_path, as_attachment=True)
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name='members.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+@app.route('/export/pdf')
+@login_required
+def export_pdf():
+    members = list(members_collection.find({}, {"_id": 0}))
+    if not members:
+        flash("No data to export", "warning")
+        return redirect(url_for('reports'))
+    
+    # Create PDF with fpdf2 (pure Python, no system binary needed)
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Try to load Gujarati font, fallback to Helvetica if not available
+    font_path = os.path.join(os.path.dirname(__file__), 'static', 'fonts', 'NotoSansGujarati-Regular.ttf')
+    has_gujarati_font = False
+    if os.path.exists(font_path):
+        try:
+            pdf.add_font('NotoGujarati', '', font_path)
+            has_gujarati_font = True
+        except Exception:
+            has_gujarati_font = False
+    
+    pdf.add_page()
+    
+    # Title
+    if has_gujarati_font:
+        pdf.set_font('NotoGujarati', '', 18)
+    else:
+        pdf.set_font('Helvetica', 'B', 18)
+    pdf.set_text_color(41, 98, 255)
+    pdf.cell(0, 12, 'Member Management - Report', ln=True, align='C')
+    
+    # Subtitle with date
+    if has_gujarati_font:
+        pdf.set_font('NotoGujarati', '', 10)
+    else:
+        pdf.set_font('Helvetica', '', 10)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 8, f'Generated on: {datetime.now().strftime("%d-%m-%Y %H:%M")} | Total Records: {len(members)}', ln=True, align='C')
+    pdf.ln(5)
+    
+    # Table header
+    headers = ['Name', 'Mobile', 'Age', 'Date', 'Grain Type', 'Hastak', 'Created By']
+    col_widths = [55, 35, 15, 28, 35, 55, 54]
+    
+    # Header row
+    if has_gujarati_font:
+        pdf.set_font('NotoGujarati', '', 10)
+    else:
+        pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(41, 98, 255)
+    pdf.set_text_color(255, 255, 255)
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 10, header, border=1, fill=True, align='C')
+    pdf.ln()
+    
+    # Data rows
+    if has_gujarati_font:
+        pdf.set_font('NotoGujarati', '', 9)
+    else:
+        pdf.set_font('Helvetica', '', 9)
+    pdf.set_text_color(50, 50, 50)
+    
+    for idx, member in enumerate(members):
+        # Alternate row colors
+        if idx % 2 == 0:
+            pdf.set_fill_color(245, 247, 250)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+        
+        row_data = [
+            str(member.get('member_name', '')),
+            str(member.get('mobile_number', '')),
+            str(member.get('age', '')),
+            str(member.get('date', '')),
+            str(member.get('grain_type', '')),
+            str(member.get('hastak', '')),
+            str(member.get('created_by', ''))
+        ]
+        
+        for i, data in enumerate(row_data):
+            pdf.cell(col_widths[i], 8, data, border=1, fill=True, align='C')
+        pdf.ln()
+    
+    # Footer
+    pdf.ln(5)
+    if has_gujarati_font:
+        pdf.set_font('NotoGujarati', '', 8)
+    else:
+        pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 8, 'Member Management System - Confidential Report', ln=True, align='C')
+    
+    # Output to in-memory buffer
+    output = io.BytesIO()
+    pdf.output(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f'members_report_{datetime.now().strftime("%Y%m%d")}.pdf',
+        mimetype='application/pdf'
+    )
 
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -319,4 +438,5 @@ def profile():
     return render_template('profile.html', user=user)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
