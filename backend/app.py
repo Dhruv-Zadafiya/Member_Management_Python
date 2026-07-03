@@ -10,6 +10,7 @@ from bson.objectid import ObjectId
 from functools import wraps
 from fpdf import FPDF
 
+
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 frontend_dir = os.path.join(base_dir, 'frontend')
 template_dir = os.path.join(frontend_dir, 'templates')
