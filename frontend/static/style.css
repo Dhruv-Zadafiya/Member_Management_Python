@@ -249,3 +249,21 @@ mark {
 .profile-dropdown-menu {
     z-index: 1060 !important;
 }
+
+/* Mobile Screen Lag Optimizations */
+@media (max-width: 768px) {
+    .modern-navbar, .login-card, .glass-card {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+    .modern-navbar {
+        background-color: rgba(255, 255, 255, 1) !important;
+    }
+    .login-card, .glass-card {
+        background-color: #ffffff !important;
+    }
+    .modern-card, .kpi-card:hover {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05) !important; /* Lighter shadow */
+        transform: none !important; /* Disable hover lift on mobile to reduce jank */
+    }
+}

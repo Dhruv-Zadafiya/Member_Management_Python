@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Favicon -->
+    <link rel="icon" href="{{ url_for('static', filename='teamwork.png') }}" type="image/png">
     <title>Member Management</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -85,12 +87,11 @@
     <div class="container pb-5">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
+                <div id="flash-messages" class="d-none">
+                    {% for category, message in messages %}
+                        <div class="flash-data" data-category="{{ category }}" data-message="{{ message }}"></div>
+                    {% endfor %}
+                </div>
             {% endif %}
         {% endwith %}
 
@@ -110,6 +111,87 @@
     <!-- Mark.js for highlighting search terms -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mark.js/8.11.1/jquery.mark.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.mark.js@2.1.0/dist/datatables.mark.min.js"></script>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const flashElements = document.querySelectorAll('.flash-data');
+            if (flashElements.length > 0) {
+                flashElements.forEach(function(el) {
+                    const category = el.getAttribute('data-category');
+                    const message = el.getAttribute('data-message');
+                    
+                    let icon = 'info';
+                    if (category === 'success') icon = 'success';
+                    if (category === 'danger' || category === 'error') icon = 'error';
+                    if (category === 'warning') icon = 'warning';
+
+                    let isSuccess = (category === 'success');
+
+                    Swal.fire({
+                        title: isSuccess ? 'Success!' : message,
+                        text: isSuccess ? message : '',
+                        icon: icon,
+                        toast: !isSuccess,
+                        position: isSuccess ? 'center' : 'top-end',
+                        showConfirmButton: isSuccess,
+                        confirmButtonText: 'Awesome!',
+                        confirmButtonColor: '#0d6efd',
+                        timer: isSuccess ? 5000 : 4000,
+                        timerProgressBar: true,
+                        backdrop: isSuccess ? `rgba(13, 110, 253, 0.15)` : false,
+                        didOpen: (toast) => {
+                            if(!isSuccess) {
+                                toast.addEventListener('mouseenter', Swal.stopTimer)
+                                toast.addEventListener('mouseleave', Swal.resumeTimer)
+                            }
+                        }
+                    });
+
+                    // Trigger confetti for major success messages
+                    if (category === 'success') {
+                        var duration = 3 * 1000;
+                        var animationEnd = Date.now() + duration;
+                        var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+
+                        function randomInRange(min, max) {
+                          return Math.random() * (max - min) + min;
+                        }
+
+                        var interval = setInterval(function() {
+                          var timeLeft = animationEnd - Date.now();
+                          if (timeLeft <= 0) {
+                            return clearInterval(interval);
+                          }
+                          var particleCount = 50 * (timeLeft / duration);
+                          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+                          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+                        }, 250);
+                    }
+                });
+            }
+            // Password Toggle Logic
+            const togglePasswordBtns = document.querySelectorAll('.toggle-password');
+            togglePasswordBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const input = this.parentElement.querySelector('.password-field');
+                    const icon = this.querySelector('i');
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.classList.remove('bi-eye-slash');
+                        icon.classList.add('bi-eye');
+                    } else {
+                        input.type = 'password';
+                        icon.classList.remove('bi-eye');
+                        icon.classList.add('bi-eye-slash');
+                    }
+                });
+            });
+        });
+    </script>
     
     {% block scripts %}{% endblock %}
 </body>

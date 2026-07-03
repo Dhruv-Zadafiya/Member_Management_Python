@@ -10,7 +10,12 @@ from bson.objectid import ObjectId
 from functools import wraps
 from fpdf import FPDF
 
-app = Flask(__name__)
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+frontend_dir = os.path.join(base_dir, 'frontend')
+template_dir = os.path.join(frontend_dir, 'templates')
+static_dir = os.path.join(frontend_dir, 'static')
+
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
 
 # MongoDB connection with SSL certificate verification for Render deployment
@@ -74,7 +79,9 @@ def login():
             session['role'] = user.get('role', 'user')
             
             if session['role'] == 'admin':
+                flash(f"Login successful! Welcome back, {session['name']}.", "success")
                 return redirect(url_for('admin_portal'))
+            flash(f"Login successful! Welcome back, {session['name']}.", "success")
             return redirect(url_for('dashboard'))
         else:
             flash("Invalid username or password", "danger")
@@ -123,11 +130,6 @@ def dashboard():
     girl_entries = members_collection.count_documents({"grain_type": "દીકરી ના", "created_by": username})
     
     members = list(members_collection.find(user_filter).sort([("_id", -1)]))
-    
-    default_hastaks = ["અશોકભાઈ ગોવિંદભાઈ બેલડિયા", "સુરેશભાઈ ભુરાભાઈ ઝડફિયા ", "મહેશભાઈ મનજીભાઈ ડોંડા", "લલ્લુભાઈ નારણભાઈ મોરડિયા "]
-    db_hastaks = members_collection.distinct("hastak")
-    
-    hastak_options = list(set(default_hastaks + db_hastaks))
         
     return render_template('dashboard.html', 
                            total_members=total_members,
@@ -135,7 +137,6 @@ def dashboard():
                            boy_entries=boy_entries,
                            girl_entries=girl_entries,
                            members=members,
-                           hastak_options=hastak_options,
                            datetime=datetime)
 
 @app.route('/add_member', methods=['POST'])
@@ -145,7 +146,6 @@ def add_member():
     mobile_number = request.form.get('mobile_number')
     if mobile_number and not mobile_number.startswith('+91'):
         mobile_number = f"+91 {mobile_number}"
-    age = int(request.form.get('age', 0))
     date_str = request.form.get('date')
     grain_type = request.form.get('grain_type')
     hastak = request.form.get('hastak')
@@ -155,7 +155,6 @@ def add_member():
             members_collection.insert_one({
                 "member_name": member_name,
                 "mobile_number": mobile_number,
-                "age": age,
                 "date": date_str,
                 "grain_type": grain_type,
                 "hastak": hastak,
@@ -188,7 +187,6 @@ def edit_member(member_id):
         mobile_number = mobile_number.replace("+91", "").strip()
         mobile_number = f"+91 {mobile_number}"
         
-    age = int(request.form.get('age', 0))
     date_str = request.form.get('date')
     grain_type = request.form.get('grain_type')
     hastak = request.form.get('hastak')
@@ -197,7 +195,6 @@ def edit_member(member_id):
         update_data = {
             "member_name": member_name,
             "mobile_number": mobile_number,
-            "age": age,
             "date": date_str,
             "grain_type": grain_type,
             "hastak": hastak
@@ -248,10 +245,6 @@ def admin_portal():
     members_raw = list(members_collection.find().sort([("_id", -1)]))
     members = []
     
-    default_hastaks = ["અશોકભાઈ ગોવિંદભાઈ બેલડિયા", "સુરેશભાઈ ભુરાભાઈ εzફિયા ", "મહેશભાઈ મનજીભાઈ ડોંડા", "લલ્લુભાઈ નારણભાઈ મોરડિયા "]
-    db_hastaks = members_collection.distinct("hastak")
-    hastak_options = list(set(default_hastaks + db_hastaks))
-    
     username_to_name = {stat['username']: stat['name'] for stat in user_stats}
     
     for member in members_raw:
@@ -269,8 +262,7 @@ def admin_portal():
                            total_members=total_members,
                            total_users=total_users,
                            user_stats=user_stats,
-                           members=members,
-                           hastak_options=hastak_options)
+                           members=members)
 
 @app.route('/reports')
 @login_required
@@ -289,7 +281,6 @@ def export_excel():
     df.rename(columns={
         "member_name": "નામ (Name)",
         "mobile_number": "મોબાઈલ (Mobile)",
-        "age": "ઉંમર (Age)",
         "date": "તારીખ (Date)",
         "grain_type": "દાણા (Grain)",
         "hastak": "હસ્તક (Hastak)",
@@ -352,8 +343,8 @@ def export_pdf():
     pdf.ln(5)
     
     # Table header
-    headers = ['Name', 'Mobile', 'Age', 'Date', 'Grain Type', 'Hastak', 'Created By']
-    col_widths = [55, 35, 15, 28, 35, 55, 54]
+    headers = ['Name', 'Mobile', 'Date', 'Grain Type', 'Hastak', 'Created By']
+    col_widths = [60, 38, 30, 38, 56, 55]
     
     # Header row
     pdf.set_font('NotoSans', '', 10)
@@ -377,7 +368,6 @@ def export_pdf():
         row_data = [
             str(member.get('member_name', '')),
             str(member.get('mobile_number', '')),
-            str(member.get('age', '')),
             str(member.get('date', '')),
             str(member.get('grain_type', '')),
             str(member.get('hastak', '')),
@@ -403,6 +393,84 @@ def export_pdf():
         output,
         as_attachment=True,
         download_name=f'members_report_{datetime.now().strftime("%Y%m%d")}.pdf',
+        mimetype='application/pdf'
+    )
+
+@app.route('/export_member_pdf/<member_id>')
+@login_required
+def export_member_pdf(member_id):
+    query = {"_id": ObjectId(member_id)}
+    if session.get('role') != 'admin':
+        query["created_by"] = session.get('username')
+        
+    member = members_collection.find_one(query)
+    if not member:
+        flash("You don't have permission to view this member or it doesn't exist.", "danger")
+        return redirect(request.referrer or url_for('dashboard'))
+    
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # Adjust paths if we moved app.py to backend, assuming it runs from same place for now
+    if os.path.basename(base_dir) == 'backend':
+        static_dir = os.path.join(os.path.dirname(base_dir), 'frontend', 'static')
+    else:
+        static_dir = os.path.join(base_dir, 'static')
+        
+    latin_font_path = os.path.join(static_dir, 'fonts', 'NotoSans-Regular.ttf')
+    gujarati_font_path = os.path.join(static_dir, 'fonts', 'NotoSansGujarati-Regular.ttf')
+    
+    if os.path.exists(latin_font_path) and os.path.exists(gujarati_font_path):
+        pdf.add_font('NotoSans', '', latin_font_path)
+        pdf.add_font('NotoGujarati', '', gujarati_font_path)
+        pdf.set_fallback_fonts(['NotoGujarati'])
+    else:
+        pdf.set_font('helvetica', '', 12)
+        
+    pdf.add_page()
+    
+    pdf.set_font('NotoSans' if os.path.exists(latin_font_path) else 'helvetica', '', 20)
+    pdf.set_text_color(41, 98, 255)
+    pdf.cell(0, 15, 'Member Profile Receipt', ln=True, align='C')
+    
+    pdf.set_font('NotoSans' if os.path.exists(latin_font_path) else 'helvetica', '', 10)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 5, f'Generated on: {datetime.now().strftime("%d-%m-%Y %H:%M")}', ln=True, align='C')
+    pdf.ln(10)
+    
+    pdf.set_font('NotoSans' if os.path.exists(latin_font_path) else 'helvetica', '', 12)
+    pdf.set_text_color(50, 50, 50)
+    
+    details = [
+        ('Name (નામ):', str(member.get('member_name', ''))),
+        ('Mobile (મોબાઈલ):', str(member.get('mobile_number', ''))),
+        ('Date (તારીખ):', str(member.get('date', ''))),
+        ('Grain Type (દાણા):', str(member.get('grain_type', ''))),
+        ('Hastak (હસ્તક):', str(member.get('hastak', ''))),
+        ('Added By:', str(member.get('created_by', '')))
+    ]
+    
+    for label, value in details:
+        pdf.set_fill_color(245, 247, 250)
+        pdf.cell(60, 12, label, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)
+        pdf.cell(130, 12, value, border=1, fill=True)
+        pdf.ln()
+    
+    pdf.ln(20)
+    pdf.set_font('NotoSans' if os.path.exists(latin_font_path) else 'helvetica', '', 10)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 8, 'Member Management System', ln=True, align='C')
+    
+    output = io.BytesIO()
+    pdf.output(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f'member_{member.get("member_name", "profile")}_{member_id}.pdf',
         mimetype='application/pdf'
     )
 

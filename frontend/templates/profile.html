@@ -33,7 +33,12 @@
                     
                     <div class="mb-4">
                         <label class="form-label fw-semibold">New Password</label>
-                        <input type="password" class="form-control" name="password" placeholder="Leave blank to keep current password">
+                        <div class="input-group">
+                            <input type="password" class="form-control border-end-0 password-field" name="password" placeholder="Leave blank to keep current password">
+                            <button class="btn border-end border-top border-bottom bg-light toggle-password" type="button" style="border-color: #dee2e6; color: #495057;" title="Toggle Password Visibility">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="d-grid">
