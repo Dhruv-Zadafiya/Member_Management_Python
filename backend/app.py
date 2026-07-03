@@ -18,7 +18,6 @@ static_dir = os.path.join(frontend_dir, 'static')
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
 
-# MongoDB connection with SSL certificate verification for Render deployment
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv6147@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
 client = MongoClient(
     MONGO_URI,
@@ -31,7 +30,6 @@ db = client['member_management_db']
 users_collection = db['users']
 members_collection = db['members']
 
-# Initialize admin user if none exists
 if users_collection.count_documents({}) == 0:
     users_collection.insert_one({
         "name": "admin",
@@ -43,7 +41,6 @@ else:
     # Ensure existing admin has role 'admin'
     users_collection.update_one({"username": "admin"}, {"$set": {"role": "admin"}})
 
-# Auth Guard Decorator
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -52,7 +49,6 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Admin Guard Decorator
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -182,7 +178,7 @@ def edit_member(member_id):
         
     member_name = request.form.get('member_name')
     mobile_number = request.form.get('mobile_number')
-    # Clean mobile number if they submitted with +91 already or didn't
+
     if mobile_number:
         mobile_number = mobile_number.replace("+91", "").strip()
         mobile_number = f"+91 {mobile_number}"
@@ -287,7 +283,6 @@ def export_excel():
         "created_by": "Created By"
     }, inplace=True)
     
-    # Use in-memory buffer instead of filesystem (Render has ephemeral filesystem)
     output = io.BytesIO()
     df.to_excel(output, index=False, engine='openpyxl')
     output.seek(0)
@@ -307,11 +302,10 @@ def export_pdf():
         flash("No data to export", "warning")
         return redirect(url_for('reports'))
     
-    # Create PDF with fpdf2 (pure Python, no system binary needed)
+
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Load fonts - NotoSans for English/numbers, NotoSansGujarati for Gujarati text
     base_dir = os.path.dirname(os.path.abspath(__file__))
     latin_font_path = os.path.join(base_dir, 'static', 'fonts', 'NotoSans-Regular.ttf')
     gujarati_font_path = os.path.join(base_dir, 'static', 'fonts', 'NotoSansGujarati-Regular.ttf')
@@ -323,7 +317,7 @@ def export_pdf():
     try:
         pdf.add_font('NotoSans', '', latin_font_path)
         pdf.add_font('NotoGujarati', '', gujarati_font_path)
-        # Set Gujarati as fallback - fpdf2 auto-switches when it finds Gujarati characters
+
         pdf.set_fallback_fonts(['NotoGujarati'])
     except Exception as e:
         flash(f"Error loading PDF fonts: {str(e)}", "danger")
@@ -412,7 +406,7 @@ def export_member_pdf(member_id):
     pdf.set_auto_page_break(auto=True, margin=15)
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    # Adjust paths if we moved app.py to backend, assuming it runs from same place for now
+
     if os.path.basename(base_dir) == 'backend':
         static_dir = os.path.join(os.path.dirname(base_dir), 'frontend', 'static')
     else:
