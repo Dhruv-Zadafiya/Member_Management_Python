@@ -12,7 +12,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
 
 # MongoDB connection
 # IMPORTANT: Replace the string below with your MongoDB Atlas connection string
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv6147@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv@5036@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
 client = MongoClient(MONGO_URI)
 db = client['member_management_db']
 users_collection = db['users']
