@@ -19,7 +19,7 @@ static_dir = os.path.join(frontend_dir, 'static')
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_change_in_prod")
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv6147@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://zadafiyadhruv_db_user:Dhruv@5036@cluster0.h1togyr.mongodb.net/stockdb?appName=Cluster0")
 client = MongoClient(
     MONGO_URI,
     tlsCAFile=certifi.where(),
